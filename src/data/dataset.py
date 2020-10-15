@@ -17,6 +17,26 @@ from torchvision.transforms import transforms as T
 import tifffile
 from tqdm.auto import tqdm
 
+def random_crop(img, targets, crop_size):  # resize a rectangular image to a padded rectangular
+    h, w, _ = img.shape
+
+    # 0~(400-224)の間で画像のtop, leftを決める
+    top = np.random.randint(0, h - crop_size[0])
+    left = np.random.randint(0, w - crop_size[1])
+
+    # top, leftから画像のサイズである224を足して、bottomとrightを決める
+    bottom = top + crop_size[0]
+    right = left + crop_size[1]
+
+    # 決めたtop, bottom, left, rightを使って画像を抜き出す
+    new_img = img[top:bottom, left:right, :]
+
+    i = (targets[:, 0] > left) & (targets[:, 0] < right) & (targets[:, 1] > top) & (targets[:, 1] < bottom)
+    new_targets = targets[i]
+    new_targets[:, 0] -= left
+    new_targets[:, 1] -= top
+    return new_img, new_targets
+
 def letterbox(img, height, width):  # resize a rectangular image to a padded rectangular
     shape = img.shape[:2]  # shape = [height, width]
     ratio = min(float(height) / shape[0], float(width) / shape[1])
@@ -28,7 +48,6 @@ def letterbox(img, height, width):  # resize a rectangular image to a padded rec
     img = cv2.resize(img, new_shape, interpolation=cv2.INTER_AREA)  # resized, no border
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=1)  # padded rectangular
     return img, ratio, dw, dh
-
 
 def random_affine(img, targets=None, degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10)):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
@@ -147,7 +166,8 @@ class Phase1Dataset():  # for training
             ano_path = names["ano_path"]
 
             # 65536で除算して-1～1正規化
-            img = tifffile.imread(img_path)[..., np.newaxis]/65536*2 - 1
+            #img = tifffile.imread(img_path)[..., np.newaxis]/65536*2 - 1
+            img = np.clip(tifffile.imread(img_path)[..., np.newaxis], 0, 30000)/30000*2 - 1
             ano = []
             with open(ano_path, "r") as f:
                 annotations = json.load(f)
@@ -163,16 +183,18 @@ class Phase1Dataset():  # for training
         self.augment = augment
         self.size = len(self.data)
 
-    def get_data(self, img, anos):
+    def get_data(self, img0, anos0):
+        img = img0.copy()
+        anos = anos0.copy()
         h, w, _ = img.shape
+        img, anos = random_crop(img, anos, (self.load_height, self.load_width))
         img, ratio, padw, padh = letterbox(img, height=self.load_height, width=self.load_width)
 
         # Load labels
-        anos0 = anos.copy()
-        nL = len(anos0)
+        nL = len(anos)
         if nL > 0:
-            anos[:, 0] = ratio * anos0[:, 0] + padw
-            anos[:, 1] = ratio * anos0[:, 1] + padh
+            anos[:, 0] = ratio * anos[:, 0] + padw
+            anos[:, 1] = ratio * anos[:, 1] + padh
 
         # Augment image and labels
         if self.augment:
@@ -192,6 +214,9 @@ class Phase1Dataset():  # for training
         return img, anos, (h, w)
 
     def __getitem__(self, index):
+        #index = index
+        if self.augment:
+            index = index // 10
         img_path = self.data[index]["img_path"]
         img = self.data[index]["img"]
         anos = self.data[index]["ano"]
@@ -209,8 +234,8 @@ class Phase1Dataset():  # for training
 
         for k in range(num_objs):
             ano = anos[k]
-            h = 15
-            w = 15
+            h = 1
+            w = 1
 
             rh, rw = simple_gaussian_radius((math.ceil(h), math.ceil(w)))
             rh = max(0, int(rh))
@@ -223,4 +248,6 @@ class Phase1Dataset():  # for training
         return ret
 
     def __len__(self):
+        if self.augment:
+            return self.size * 10
         return self.size

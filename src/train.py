@@ -15,9 +15,11 @@ from utils.visualize import visualization
 # 学習用関数
 def train(train_loader, model, optimizer, criterion, device, total_epoch, epoch):
     model.train() # モデルを学習モードに変更
+    accumulate_datas = []
     # ミニバッチごとに学習
     for i, data in enumerate(train_loader, 0):
         # get the inputs
+        img_path = data["img_path"]
         inputs = data["input"].to(device) # GPUを使用するため，to()で明示的に指定
         anos = data["hm"].to(device) # GPUを使用するため，to()で明示的に指定
 
@@ -31,8 +33,10 @@ def train(train_loader, model, optimizer, criterion, device, total_epoch, epoch)
         optimizer.step() # 重みを更新する
 
         print("\rEpoch [%d/%d], Iterate : %d, Loss : %.4f" % (epoch,total_epoch,i,loss.item()), end='')
+        accumulate_datas.append({"img_name":osp.basename(img_path[0])[:-4], "img":inputs[0], "ano":anos[0], "output":outputs['hm'][0]})
 
     print("")
+    return accumulate_datas
 
 def valid(valid_loader, model, criterion, device):
     model.eval() # モデルを推論モードに変更
@@ -98,7 +102,8 @@ def main(opt):
             model, opt.load_model, optimizer)
 
     # 最適化手法を定義
-    optimizer = torch.optim.Adam(model.parameters(), opt.lr)
+    #optimizer = torch.optim.Adam(model.parameters(), opt.lr)
+    optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr)#, momentum=m, dampening=d, weight_decay=w, nesterov=n)
     # 損失関数を定義
     criterion = HMLoss()
     # 学習率のスケジューリングを定義
@@ -112,7 +117,9 @@ def main(opt):
     # 学習 TODO エポック終了時点ごとにテスト用データで評価とモデル保存
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         print("learning rate : %f" % scheduler.get_last_lr()[0])
-        train(train_loader, model, optimizer, criterion, device, opt.num_epochs, epoch)
+        accumulate_datas = train(train_loader, model, optimizer, criterion, device, opt.num_epochs, epoch)
+        visualization(os.path.join(opt.save_dir, opt.task, 'visualized'),
+                    accumulate_datas)
         scheduler.step()
 
         # 最新モデルの保存
