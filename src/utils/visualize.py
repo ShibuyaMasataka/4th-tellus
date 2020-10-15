@@ -19,13 +19,16 @@ def visualization(path, datas):
         plt.imshow(np.squeeze(img))
         plt.colorbar()
         fig.savefig(os.path.join(path, img_name + "_img.png"))
+        plt.close()
 
         fig = plt.figure()
         plt.imshow(np.squeeze(ano))
         plt.colorbar()
         fig.savefig(os.path.join(path, img_name + "_ano.png"))
+        plt.close()
 
         fig = plt.figure()
         plt.imshow(np.squeeze(output))
         plt.colorbar()
         fig.savefig(os.path.join(path, img_name + "_output.png"))
+        plt.close()
