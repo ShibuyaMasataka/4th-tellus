@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
+from models.shakedrop import ShakeDrop
 
 from .config import cfg, update_config
 
@@ -49,11 +50,44 @@ class BasicBlock(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = out + residual
         out = self.relu(out)
 
         return out
 
+class BasicShakeBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
+        super(BasicShakeBlock, self).__init__()
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes, momentum=BN_MOMENTUM)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes, momentum=BN_MOMENTUM)
+        self.downsample = downsample
+        self.stride = stride
+        self.shake_drop = ShakeDrop()
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        out = self.shake_drop(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out = out + residual
+        out = self.relu(out)
+
+        return out
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -90,7 +124,7 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = out + residual
         out = self.relu(out)
 
         return out
@@ -265,6 +299,7 @@ class HighResolutionModule(nn.Module):
 
 blocks_dict = {
     'BASIC': BasicBlock,
+    'BASICSHAKE': BasicShakeBlock,
     'BOTTLENECK': Bottleneck
 }
 
@@ -460,6 +495,7 @@ class PoseHighResolutionNet(nn.Module):
         return nn.Sequential(*modules), num_inchannels
 
     def forward(self, x):
+        x_h, x_w = x.size(2), x.size(3)
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -510,7 +546,7 @@ class PoseHighResolutionNet(nn.Module):
 
         z = {}
         for head in self.heads:
-            z[head] = self.__getattr__(head)(x)
+            z[head] = F.interpolate(self.__getattr__(head)(x), size=(x_h, x_w), mode='bilinear', align_corners=True)   
         return z
 
     def init_weights(self, pretrained=''):

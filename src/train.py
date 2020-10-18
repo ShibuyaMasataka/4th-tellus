@@ -15,7 +15,6 @@ from utils.visualize import visualization
 # 学習用関数
 def train(train_loader, model, optimizer, criterion, device, total_epoch, epoch):
     model.train() # モデルを学習モードに変更
-    accumulate_datas = []
     # ミニバッチごとに学習
     for i, data in enumerate(train_loader, 0):
         # get the inputs
@@ -33,10 +32,8 @@ def train(train_loader, model, optimizer, criterion, device, total_epoch, epoch)
         optimizer.step() # 重みを更新する
 
         print("\rEpoch [%d/%d], Iterate : %d, Loss : %.4f" % (epoch,total_epoch,i,loss.item()), end='')
-        accumulate_datas.append({"img_name":osp.basename(img_path[0])[:-4], "img":inputs[0], "ano":anos[0], "output":outputs['hm'][0]})
 
     print("")
-    return accumulate_datas
 
 def valid(valid_loader, model, criterion, device):
     model.eval() # モデルを推論モードに変更
@@ -68,9 +65,9 @@ def main(opt):
 
     # データの読み込み
     print("load data")
-    train_dataset = Phase1Dataset(train_data, load_size=(640, 640), augment=True)
+    train_dataset = Phase1Dataset(train_data, load_size=(768, 768), augment=True)
     print("train data length : %d" % (len(train_dataset)))
-    valid_dataset = Phase1Dataset(valid_data, load_size=(640, 640), augment=False)
+    valid_dataset = Phase1Dataset(valid_data, load_size=(768, 768), augment=False)
     print("valid data length : %d" % (len(valid_dataset)))
     # DataLoaderの作成
     train_loader = torch.utils.data.DataLoader(
@@ -117,9 +114,7 @@ def main(opt):
     # 学習 TODO エポック終了時点ごとにテスト用データで評価とモデル保存
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         print("learning rate : %f" % scheduler.get_last_lr()[0])
-        accumulate_datas = train(train_loader, model, optimizer, criterion, device, opt.num_epochs, epoch)
-        visualization(os.path.join(opt.save_dir, opt.task, 'visualized'),
-                    accumulate_datas)
+        train(train_loader, model, optimizer, criterion, device, opt.num_epochs, epoch)
         scheduler.step()
 
         # 最新モデルの保存

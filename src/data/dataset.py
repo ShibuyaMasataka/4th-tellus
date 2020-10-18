@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 
 def random_crop(img, targets, crop_size):  # resize a rectangular image to a padded rectangular
     h, w, _ = img.shape
-
+    
     # 0~(400-224)の間で画像のtop, leftを決める
     top = np.random.randint(0, h - crop_size[0])
     left = np.random.randint(0, w - crop_size[1])
@@ -37,6 +37,16 @@ def random_crop(img, targets, crop_size):  # resize a rectangular image to a pad
     new_targets[:, 1] -= top
     return new_img, new_targets
 
+def resize(img, anos, ratio):
+	shape = img.shape[:2] 
+	new_shape = (round(shape[1] * ratio), round(shape[0] * ratio))
+	img = cv2.resize(img, new_shape, interpolation=cv2.INTER_AREA)
+	nL = len(anos)
+	if nL > 0:
+		anos[:, 0] = ratio * anos[:, 0]
+		anos[:, 1] = ratio * anos[:, 1]
+	return img, anos
+
 def letterbox(img, height, width):  # resize a rectangular image to a padded rectangular
     shape = img.shape[:2]  # shape = [height, width]
     ratio = min(float(height) / shape[0], float(width) / shape[1])
@@ -46,7 +56,7 @@ def letterbox(img, height, width):  # resize a rectangular image to a padded rec
     top, bottom = round(dh - 0.1), round(dh + 0.1)
     left, right = round(dw - 0.1), round(dw + 0.1)
     img = cv2.resize(img, new_shape, interpolation=cv2.INTER_AREA)  # resized, no border
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=1)  # padded rectangular
+    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)  # padded rectangular
     return img, ratio, dw, dh
 
 def random_affine(img, targets=None, degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10)):
@@ -76,7 +86,7 @@ def random_affine(img, targets=None, degrees=(-10, 10), translate=(.1, .1), scal
 
     M = S @ T @ R  # Combined rotation matrix. ORDER IS IMPORTANT HERE!!
     imw = cv2.warpPerspective(img, M, dsize=(width, height), flags=cv2.INTER_LINEAR,
-                              borderValue=1)  # BGR order borderValue
+                              borderValue=0)  # BGR order borderValue
 
     # Return warped points also
     if targets is not None:
@@ -153,6 +163,18 @@ def get_train_valid_split_data_names(train_img_folder, train_ano_folder, valid_s
 
     return train_data, valid_data
 
+def get_test_data_names(test_img_folder):
+	# データのパスを学習用と評価用に分割したものを返す
+    data_names = []
+    for img_name in os.listdir(test_img_folder):
+        img_path = test_img_folder + img_name
+
+        data_names.append({"img_path":img_path})
+    data_names = np.array(data_names)
+
+    return data_names
+
+
 class Phase1Dataset():  # for training
     def __init__(self, data_names, load_size=(640, 640), augment=False):
         self.num_classes = 1
@@ -171,7 +193,7 @@ class Phase1Dataset():  # for training
             ano = []
             with open(ano_path, "r") as f:
                 annotations = json.load(f)
-
+                #print(len(annotations['coastline_points']))
                 for point in annotations['coastline_points']:
                     ano.append(point)
             ano = np.array(ano)
@@ -187,7 +209,8 @@ class Phase1Dataset():  # for training
         img = img0.copy()
         anos = anos0.copy()
         h, w, _ = img.shape
-        img, anos = random_crop(img, anos, (self.load_height, self.load_width))
+        #img, anos = resize(img, anos, 1/2)
+        #img, anos = random_crop(img[:, :, np.newaxis], anos, (self.load_height, self.load_width))
         img, ratio, padw, padh = letterbox(img, height=self.load_height, width=self.load_width)
 
         # Load labels
@@ -216,16 +239,15 @@ class Phase1Dataset():  # for training
     def __getitem__(self, index):
         #index = index
         if self.augment:
-            index = index // 10
+        	index = index // 10
         img_path = self.data[index]["img_path"]
         img = self.data[index]["img"]
         anos = self.data[index]["ano"]
 
         img, anos, o_size = self.get_data(img, anos)
 
-        down_ratio = 4
-        output_h = img.shape[1] // self.down_ratio
-        output_w = img.shape[2] // self.down_ratio
+        output_h = img.shape[1] #// self.down_ratio
+        output_w = img.shape[2] #// self.down_ratio
         num_classes = self.num_classes
         num_objs = anos.shape[0]
         hm = np.zeros((num_classes, output_h, output_w), dtype=np.float32)
@@ -234,13 +256,14 @@ class Phase1Dataset():  # for training
 
         for k in range(num_objs):
             ano = anos[k]
-            h = 1
-            w = 1
+            h = 30
+            w = 30
 
             rh, rw = simple_gaussian_radius((math.ceil(h), math.ceil(w)))
             rh = max(0, int(rh))
             rw = max(0, int(rw))
-            point = np.array([ano[0] // self.down_ratio, ano[1] // self.down_ratio], dtype=np.float32)
+            #point = np.array([ano[0] // self.down_ratio, ano[1] // self.down_ratio], dtype=np.float32)
+            point = np.array([ano[0], ano[1]], dtype=np.float32)
             point_int = point.astype(np.int32)
             simple_draw_umich_gaussian(hm[cls_id], point_int, rh, rw)
 
@@ -249,5 +272,48 @@ class Phase1Dataset():  # for training
 
     def __len__(self):
         if self.augment:
-            return self.size * 10
+        	return self.size * 10
+        return self.size
+
+class TestDataset():  # for training
+    def __init__(self, data_names, load_size=(640, 640)):
+        self.num_classes = 1
+
+        self.data = []
+
+        # load images and annotations
+        for names in data_names:
+            img_path = names["img_path"]
+
+            # 65536で除算して-1～1正規化
+            #img = tifffile.imread(img_path)[..., np.newaxis]/65536*2 - 1
+            img = np.clip(tifffile.imread(img_path)[..., np.newaxis], 0, 30000)/30000*2 - 1
+
+            self.data.append({"img_path":img_path, "img":img})
+
+        self.load_width = load_size[0]
+        self.load_height = load_size[1]
+        self.size = len(self.data)
+
+    def get_data(self, img0):
+        img = img0.copy()
+        h, w, _ = img.shape
+        img, ratio, padw, padh = letterbox(img, height=self.load_height, width=self.load_width)
+
+        img = torch.from_numpy(img.astype(np.float32)).clone()
+        #img = img.unsqueeze(0).permute(0,3,1,2)
+        img = img.unsqueeze(0)
+
+        return img, ratio, padw, padh
+
+    def __getitem__(self, index):
+        img_path = self.data[index]["img_path"]
+        oimg = self.data[index]["img"]
+
+        img, ratio, padw, padh = self.get_data(oimg)
+
+        ret = {'img_path':img_path, 'input': img, 'ratio':ratio, 'padw':padw, 'padh':padh, 'oimg':oimg}
+        return ret
+
+    def __len__(self):
         return self.size
