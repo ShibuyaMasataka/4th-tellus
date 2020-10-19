@@ -11,6 +11,7 @@ from utils.loss import HMLoss
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from opts import opts
 from utils.visualize import visualization
+from utils.submit import save_json
 from models.decode import hm_decode
 
 def test(test_loader, model, device):
@@ -31,7 +32,7 @@ def test(test_loader, model, device):
 
             outputs = model(inputs) # 順伝播の計算
 
-            detections, heat = hm_decode(outputs['hm'], 0.4, K=10000)
+            detections, heat = hm_decode(outputs['hm'], 0.1, K=10000)
             points = detections[:, :2]
             #points = points * 4
 
@@ -47,7 +48,7 @@ def main(opt):
 
     # データの読み込み
     print("load data")
-    test_dataset = TestDataset(test_data, load_size=(640, 640))
+    test_dataset = TestDataset(test_data, load_size=(640, 640), limit=opt.limit)
     print("test data length : %d" % (len(test_dataset)))
     # DataLoaderの作成
     test_loader = torch.utils.data.DataLoader(
@@ -75,9 +76,10 @@ def main(opt):
     os.makedirs(os.path.join(opt.save_dir, opt.task, 'test_output'), exist_ok=True)
 
     accumulate_datas = test(test_loader, model, device)
-        
+
     visualization(os.path.join(opt.save_dir, opt.task, 'test_output'),
                        accumulate_datas)
+    save_json(os.path.join(opt.save_dir, opt.task), accumulate_datas)
 
 
 if __name__ == '__main__':

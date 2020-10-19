@@ -543,6 +543,8 @@ class PoseHighResolutionNet(nn.Module):
         x = torch.cat([x[0], x1, x2, x3], 1)
 
         x = self.last_layer(x)
+        #x = F.interpolate(x, size=(x_h, x_w), mode='bilinear', align_corners=True)   
+
 
         z = {}
         for head in self.heads:

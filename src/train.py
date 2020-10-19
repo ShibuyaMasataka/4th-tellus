@@ -11,10 +11,12 @@ from utils.loss import HMLoss
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from opts import opts
 from utils.visualize import visualization
+import torch_optimizer as optim
 
 # 学習用関数
 def train(train_loader, model, optimizer, criterion, device, total_epoch, epoch):
     model.train() # モデルを学習モードに変更
+    accumulate_loss = 0
     # ミニバッチごとに学習
     for i, data in enumerate(train_loader, 0):
         # get the inputs
@@ -31,7 +33,9 @@ def train(train_loader, model, optimizer, criterion, device, total_epoch, epoch)
         loss.backward() # 誤差を逆伝播させる
         optimizer.step() # 重みを更新する
 
-        print("\rEpoch [%d/%d], Iterate : %d, Loss : %.4f" % (epoch,total_epoch,i,loss.item()), end='')
+        accumulate_loss += loss.item()
+
+        print("\rEpoch [%d/%d], Iterate : %d, Loss : %.4f" % (epoch,total_epoch,i,(accumulate_loss/(i+1))), end='')
 
     print("")
 
@@ -65,9 +69,9 @@ def main(opt):
 
     # データの読み込み
     print("load data")
-    train_dataset = Phase1Dataset(train_data, load_size=(768, 768), augment=True)
+    train_dataset = Phase1Dataset(train_data, load_size=(640, 640), augment=True, limit=opt.limit)
     print("train data length : %d" % (len(train_dataset)))
-    valid_dataset = Phase1Dataset(valid_data, load_size=(768, 768), augment=False)
+    valid_dataset = Phase1Dataset(valid_data, load_size=(640, 640), augment=False, limit=opt.limit)
     print("valid data length : %d" % (len(valid_dataset)))
     # DataLoaderの作成
     train_loader = torch.utils.data.DataLoader(
@@ -99,8 +103,13 @@ def main(opt):
             model, opt.load_model, optimizer)
 
     # 最適化手法を定義
-    #optimizer = torch.optim.Adam(model.parameters(), opt.lr)
-    optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr)#, momentum=m, dampening=d, weight_decay=w, nesterov=n)
+    if opt.optimizer == "SGD":
+        optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr)#, momentum=m, dampening=d, weight_decay=w, nesterov=n)
+    elif opt.optimizer == "Adam":
+        optimizer = torch.optim.Adam(model.parameters(), opt.lr)
+    elif opt.optimizer == "RAdam":
+        optimizer = optim.RAdam(model.parameters(), lr=opt.lr)
+    
     # 損失関数を定義
     criterion = HMLoss()
     # 学習率のスケジューリングを定義
@@ -115,7 +124,8 @@ def main(opt):
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         print("learning rate : %f" % scheduler.get_last_lr()[0])
         train(train_loader, model, optimizer, criterion, device, opt.num_epochs, epoch)
-        scheduler.step()
+        if opt.optimizer == "SGD":
+            scheduler.step()
 
         # 最新モデルの保存
         save_model(os.path.join(opt.save_dir, opt.task, 'model_last.pth'),

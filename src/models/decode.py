@@ -38,7 +38,7 @@ def hm_decode(heat, thresh, K=100):
 
     # heat = torch.sigmoid(heat)
     # perform nms on heatmaps
-    #heat = _nms(heat)
+    heat = _nms(heat)
     #mask = heat[:, :] >= thresh
     #heat = heat * mask
 

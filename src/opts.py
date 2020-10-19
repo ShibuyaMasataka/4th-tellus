@@ -153,6 +153,8 @@ class opts(object):
                              help='category specific bounding box size.')
     self.parser.add_argument('--not_reg_offset', action='store_true',
                              help='not regress local offset.')
+    self.parser.add_argument('--optimizer', type=str, default='SGD')
+    self.parser.add_argument('--limit', action='store_true',)
 
   def parse(self, args=''):
     if args == '':

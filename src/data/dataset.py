@@ -176,7 +176,7 @@ def get_test_data_names(test_img_folder):
 
 
 class Phase1Dataset():  # for training
-    def __init__(self, data_names, load_size=(640, 640), augment=False):
+    def __init__(self, data_names, load_size=(640, 640), augment=False, limit=False):
         self.num_classes = 1
         self.down_ratio = 4
 
@@ -188,8 +188,10 @@ class Phase1Dataset():  # for training
             ano_path = names["ano_path"]
 
             # 65536で除算して-1～1正規化
-            #img = tifffile.imread(img_path)[..., np.newaxis]/65536*2 - 1
-            img = np.clip(tifffile.imread(img_path)[..., np.newaxis], 0, 30000)/30000*2 - 1
+            if limit:
+                img = np.clip(tifffile.imread(img_path)[..., np.newaxis], 0, 30000)/30000*2 - 1
+            else:
+                img = tifffile.imread(img_path)[..., np.newaxis]/65536*2 - 1
             ano = []
             with open(ano_path, "r") as f:
                 annotations = json.load(f)
@@ -276,7 +278,7 @@ class Phase1Dataset():  # for training
         return self.size
 
 class TestDataset():  # for training
-    def __init__(self, data_names, load_size=(640, 640)):
+    def __init__(self, data_names, load_size=(640, 640), limit=False):
         self.num_classes = 1
 
         self.data = []
@@ -286,8 +288,10 @@ class TestDataset():  # for training
             img_path = names["img_path"]
 
             # 65536で除算して-1～1正規化
-            #img = tifffile.imread(img_path)[..., np.newaxis]/65536*2 - 1
-            img = np.clip(tifffile.imread(img_path)[..., np.newaxis], 0, 30000)/30000*2 - 1
+            if limit:
+                img = np.clip(tifffile.imread(img_path)[..., np.newaxis], 0, 30000)/30000*2 - 1
+            else:
+                img = tifffile.imread(img_path)[..., np.newaxis]/65536*2 - 1
 
             self.data.append({"img_path":img_path, "img":img})
 
